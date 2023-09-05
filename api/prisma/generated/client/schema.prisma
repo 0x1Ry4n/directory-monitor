@@ -1,0 +1,21 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "./generated/client"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("MONGO_URI")
+}
+
+model Notification {
+  id               String   @id @map("_id")
+  folderPath       String
+  type             String
+  extension        String?
+  modificationDate DateTime
+  createdAt        DateTime @default(now())
+}
