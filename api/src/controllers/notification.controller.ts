@@ -5,11 +5,27 @@ import { zParse } from "../middlewares/validation.middleware";
 
 const createNotificationSchema = z.object({
   body: z.object({
-    folderId: z.string().uuid(),
-    notificationType: z.enum(["add", "move", "delete"]),
-    objectType: z.enum(["folder", "file"]),
-    extension: z.string().min(1).optional(),
-    modificationDate: z.string().datetime(),
+    folderId: z
+      .string({
+        required_error: "folderId reference is required",
+      })
+      .uuid(),
+    notificationType: z.enum(["created", "moved", "modified", "deleted"], {
+      required_error: "notificationType is required",
+    }),
+    event: z.string({
+      required_error: "message is required"
+    })
+    .optional(),
+    objectType: z.enum(["folder", "file"], {
+      required_error: "objectType is required",
+    }),
+    extension: z
+      .string({
+        required_error: "extension is required",
+      })
+      .min(1)
+      .optional(),
   }),
 });
 
@@ -17,25 +33,19 @@ const createNotification = async (req: Request, res: Response) => {
   try {
     const { body } = await zParse(createNotificationSchema, req);
 
-    const {
-      notificationType,
-      objectType,
-      extension,
-      modificationDate,
-      folderId,
-    } = body;
+    const { event, notificationType, objectType, extension, folderId } = body;
 
     if (objectType !== "folder" && !extension) {
-      res.status(400).json({ error: "Bad request" });
+      res.status(400).json({ error: "Bad Request" });
       return;
     }
 
     const newNotification = await prisma.notification.create({
       data: {
         notificationType,
+        event,
         objectType,
         extension,
-        modificationDate,
         folder: {
           connect: {
             id: folderId,
@@ -47,7 +57,7 @@ const createNotification = async (req: Request, res: Response) => {
     res.status(200).json(newNotification);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      res.status(400).json({ error: "Bad request", details: error.issues });
+      res.status(400).json({ error: "Bad Request", details: error.issues });
     } else {
       console.error(error);
       res.status(500).json({ error: error });
@@ -55,9 +65,22 @@ const createNotification = async (req: Request, res: Response) => {
   }
 };
 
+const deleteNotifications = async (req: Request, res: Response) => {
+  try {
+    const notifications = await prisma.notification.deleteMany()
+    res.status(200).json(notifications);
+  } catch (e) {
+    res.status(500).json({ error: e });
+  }
+};
+
 const getNotifications = async (req: Request, res: Response) => {
   try {
-    const notifications = await prisma.notification.findMany();
+    const notifications = await prisma.notification.findMany({
+      include: {
+        folder: true,
+      },
+    });
     res.status(200).json(notifications);
   } catch (e) {
     res.status(500).json({ error: e });
@@ -67,4 +90,5 @@ const getNotifications = async (req: Request, res: Response) => {
 export default {
   createNotification,
   getNotifications,
+  deleteNotifications
 };
