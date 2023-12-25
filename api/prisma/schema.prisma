@@ -23,10 +23,11 @@ model Notification {
   id               String   @id @default(uuid()) @map("_id")
   notificationType String
   objectType       String
+  event            String
   extension        String?
-  modificationDate DateTime
-  folder           Folder?  @relation(fields: [folderId], references: [id])
+  createdAt        DateTime @default(now())
   folderId         String
+  folder           Folder?  @relation(fields: [folderId], references: [folderPath])
 
   @@map("notifications")
 }

@@ -1,7 +1,9 @@
 import { Request, Response } from "express";
 import { z } from "zod";
-import { prisma } from "../app";
+import { Prisma } from "../config/connectDatabase";
 import { zParse } from "../middlewares/validation.middleware";
+
+const prisma = Prisma.getPrisma();
 
 const createFolderSchema = z.object({
   body: z.object({
@@ -19,33 +21,43 @@ const createFolder = async (req: Request, res: Response) => {
 
     const { folderPath } = body;
 
-    const newFolder = await prisma.folder.create({
-      data: {
-        folderPath,
-      },
+    const newFolder = await prisma.folder.upsert({
+      where:  { folderPath: folderPath }, 
+      create: { folderPath: folderPath },
+      update: {}, 
     });
 
-    res.status(200).json(newFolder);
+    return res.status(200).json(newFolder);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      res.status(400).json({ error: "Bad Request", details: error.issues });
+      return res.status(400).json({ error: "Bad Request", details: error.issues });
     } else {
       console.error(error);
-      res.status(500).json({ error: error });
+      return res.status(500).json({ error: error });
     }
   }
 };
 
+const deleteFolders = async (req: Request, res: Response) => {
+  try {
+      const folders = await prisma.folder.deleteMany()
+      return res.status(200).json(folders);
+  } catch(e) {
+    return res.status(500).json({ error: e })
+  }
+}
+
 const getFolders = async (req: Request, res: Response) => {
   try {
     const folders = await prisma.folder.findMany();
-    res.status(200).json(folders);
+    return res.status(200).json(folders);
   } catch (e) {
-    res.status(500).json({ error: e });
+    return res.status(500).json({ error: e });
   }
 };
 
 export default {
   createFolder,
   getFolders,
+  deleteFolders
 };
