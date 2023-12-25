@@ -7,17 +7,17 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from win10toast import ToastNotifier
 from controllers.send_webhook import send_request
-from dotenv import load_dotenv, find_dotenv
-
-load_dotenv(find_dotenv())
+from config.env import *
+from schemas.constants import *
 
 class ConfigManager:
     def __init__(self, config_file):
-        self.config_file = config_file
         self.config = configparser.ConfigParser()
+        self.config_file = config_file
+        self.url = f"{os.environ.get("WEBHOOK_URL")}/api/folder/create"
+        self.folder_path = None
 
         if not os.path.isfile(config_file):
-            self.create_config()
             self.set_last_watched_folder("")
 
     def create_config(self): 
@@ -30,7 +30,12 @@ class ConfigManager:
     def get_last_watched_folder(self):
         try:
             self.config.read(self.config_file)
-            return self.config.get('Settings', 'last_watched_folder')
+            
+            folder_path = self.config.get('Settings', 'last_watched_folder')
+            
+            send_request(url=self.url, data={"folderPath": folder_path}, headers={"Content-type": "application/json"})
+
+            return folder_path
         except (configparser.NoSectionError, configparser.NoOptionError) as e:
             print(e)
             return None
@@ -46,50 +51,69 @@ class ConfigManager:
         with open(self.config_file, 'w') as configfile:
             self.config.write(configfile)
 
+
 class NotificationManager: 
     def __init__(self): 
         self.toaster = ToastNotifier()
 
-    def send_webhook_notification(self, url, notificationType, event, objectType, extension, folderId, timeout):
-        data = {
-            "notificationType": notificationType,
-            "event": "" if event is None else event, 
-            "objectType": objectType, 
-            "extension": "" if extension is None else extension, 
-            "folderId": folderId
-        }
-        
+    def send_webhook_notification(self, params):
+        self.url = params["url"]
+        self.payload = params["payload"]
+
         try:
-            response = send_request(url=url, data=data, headers={"Content-type": "application/json"})
-            print(response)
+            event = "" if self.payload["objectEvent"] is None else self.payload["objectEvent"]
+            eventType = self.payload["eventType"]
+            extension = "" if self.payload["objectExtension"] is None else self.payload["objectExtension"]
+            objectType = self.payload["objectType"]
+            folderId = self.payload["objectPath"]
+
+            if objectType in [FILE, FOLDER]: 
+                self.url = f"{self.url}/notifications/create"
+                self.payload = {
+                    "notificationType": eventType,
+                    "event": event,  
+                    "objectType": objectType, 
+                    "extension": extension, 
+                    "folderId": folderId
+                }
+
+            response = send_request(url=self.url, data=self.payload, headers={"Content-type": "application/json"})
 
             if response is None: 
-                self.toaster.show_toast("Directory Monitor", f"Webhook Bad Request")
+                self.toaster.show_toast("Directory Monitor", f"Webhook Bad Request", duration=TIMEOUT)
 
-            self.toaster.show_toast("Directory Monitor", event, duration=timeout)
+            self.toaster.show_toast("Directory Monitor", event, duration=TIMEOUT)
         except Exception as e: 
             self.toaster.show_toast("Directory Monitor", f"Notification exception: {e}")
 
-class EventHandler(FileSystemEventHandler):
+class EventHandler(FileSystemEventHandler): 
     def __init__(self, app, notification_manager):
         self.app = app
-        self.url = os.environ.get("WEBHOOK_URL")
         self.notification_manager = notification_manager
+        self.url = os.environ.get("WEBHOOK_URL")
 
     def send_notification(self, event):
-        object_type = "folder" if event.is_directory else "file"
-        extension = os.path.splitext(event.src_path)[-1]
-        
+        source_path = os.path.normpath(event.src_path)
+        objectEvent = f"{source_path} has moved to {os.path.normpath(event.dest_path)}" if event.event_type == "moved" else f"{source_path} has {event.event_type}"
+        objectType = FOLDER if event.is_directory else FILE
+        eventType = event.event_type
+        _, extension = os.path.splitext(event.src_path)
+
         payload = {
-            "folderId": "b9178d6d-7de5-49e5-9c56-d973f6b9549e",
-            "notificationType": event.event_type,
-            "event": f"{event.src_path} has {event.event_type}",
-            "objectType": object_type,
-            "extension": extension,
-            "timeout": 3
+            "objectPath": self.app.path,
+            "objectType": objectType,
+            "eventType": eventType,
+            "objectEvent": objectEvent,
+            "objectExtension": extension,
         }
 
-        self.notification_manager.send_webhook_notification(self.url, **payload)
+        params = {
+            "url": f"{self.url}/api", 
+            "payload": payload
+        }
+
+        self.notification_manager.send_webhook_notification(params)
+       
         self.app.list_files()
 
     def on_created(self, event): 

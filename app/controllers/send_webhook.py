@@ -1,11 +1,11 @@
+from requests.exceptions import HTTPError
 import requests
 
 def send_request(url, data, headers): 
     try: 
         with requests.post(url=url, headers=headers, json=data) as response: 
-            if response.status_code == 200: 
-                return response.json()
-            else: 
-                return None
+           return response
+    except HTTPError as e: 
+        print(e.response.text)
     except Exception as e: 
         print(e)
